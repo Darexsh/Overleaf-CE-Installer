@@ -312,8 +312,8 @@ def action_compose_simple(subcmd):
         run_cmd(compose + ["stop"], check=True)
         log("[OK] Server stopped.")
     elif subcmd == "restart":
-        run_cmd(compose + ["up", "-d", "--force-recreate", "sharelatex"], check=True)
-        log("[OK] Server restarted (recreated sharelatex).")
+        run_cmd(compose + ["restart"], check=True)
+        log("[OK] Server restarted.")
     elif subcmd == "logs":
         res = run_cmd(compose + ["logs", "--tail", "200"], capture=True)
         print(((res.stdout or "") + (res.stderr or "")).strip())

@@ -520,8 +520,8 @@ def compose_action_thread(action):
             run_cmd(compose + ["stop"], check=True)
             log(t("server_stop"))
         elif action == "restart":
-            # Recreate sharelatex so env_file changes are applied.
-            run_cmd(compose + ["up", "-d", "--force-recreate", "sharelatex"], check=True)
+            # Normal restart without recreate to preserve container-installed tools.
+            run_cmd(compose + ["restart"], check=True)
             log(t("server_restart"))
         update_container_status_label()
     except Exception as e:
