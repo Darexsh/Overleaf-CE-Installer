@@ -17,9 +17,11 @@ from pathlib import Path
 INSTALL_DIR = Path(__file__).resolve().parent
 DEFAULT_PORT = 8080
 SETTINGS_FILE = INSTALL_DIR / ".overleaf_installer_settings.json"
+BASE_SHARELATEX_IMAGE = "sharelatex/sharelatex:latest"
 
 LANG = "en"
 installing_now = False
+container_status_labels = {}
 
 TEXTS = {
     "de": {
@@ -27,12 +29,18 @@ TEXTS = {
         "mode_label": "Installationsoption:",
         "mode_default": "[STANDARD] localhost:8080",
         "mode_custom": "[BENUTZERDEFINIERT] localhost mit eigenem Port",
+        "install_profile_label": "Installationsprofil:",
+        "install_profile_basic": "Basis (offizielles Image)",
+        "install_profile_advanced": "Erweitert (eigenes Dockerfile-Image)",
+        "custom_image_tag_label": "Eigenes Image-Tag:",
+        "custom_image_tag_hint": "Nur für Erweitert. Beispiel: overleaf-sharelatex:custom",
         "port_label": "Benutzerdefinierter Port:",
         "port_placeholder": "Beispiel: 666",
         "site_language_label": "Standard-Webseiten-Sprache:",
         "site_language_hint": "Gilt als Standardsprache für neue Sitzungen.",
         "full_texlive_check": "Vollständiges TeX Live im Container installieren (scheme-full)",
         "full_texlive_hint": "Dauert lange und lädt viele Pakete herunter.",
+        "full_texlive_advanced_forced": "TeX Live wird in das eigene Docker-Image integriert.",
         "safety_label": "Sicherheitsoptionen:",
         "recreate_env_check": "overleaf.env neu erstellen (neue Secrets)",
         "reset_data_check": "Container und lokale Daten vor Installation zurücksetzen",
@@ -57,8 +65,8 @@ TEXTS = {
         "btn_logs": "Logs (Tail)",
         "btn_refresh_status": "Status aktualisieren",
         "container_status": "Container-Status:",
-        "diag_title": "Diagnose",
-        "btn_copy_diag": "Diagnose kopieren",
+        "diag_title": "Log",
+        "btn_copy_diag": "Log kopieren",
         "btn_export_log": "Log exportieren",
         "user_mgmt_title": "Benutzerverwaltung",
         "btn_delete_user": "Benutzer verwalten",
@@ -74,7 +82,7 @@ TEXTS = {
         "confirm_delete_user": "Benutzer {} wirklich löschen? Alle eigenen Projekte werden ebenfalls gelöscht.",
         "delete_user_not_found": "[INFO] Benutzer nicht gefunden: {}",
         "delete_user_done": "[OK] Benutzer gelöscht: {} | Gelöschte Projekte: {}",
-        "log_label": "Protokoll:",
+        "log_label": "Log:",
         "err_git": "Git ist nicht installiert.",
         "err_docker_compose": "docker compose / docker-compose wurde nicht gefunden.",
         "err_docker_run": "Docker antwortet nicht.",
@@ -93,10 +101,12 @@ TEXTS = {
         "server_restart": "[OK] Server neu gestartet.",
         "not_installed": "[ERROR] Arbeitsordner wurde nicht gefunden.",
         "select_lang": "Select Language / Sprache auswählen",
+        "switch_to_de": "Zu DE wechseln",
+        "switch_to_en": "Zu EN wechseln",
         "validation_port": "Bitte einen Port zwischen 1 und 65535 eingeben.",
         "repair_done": "[OK] Konfiguration wurde repariert (Dateien neu geschrieben).",
         "update_done": "[OK] Images wurden aktualisiert und gestartet.",
-        "diag_copied": "[OK] Diagnose in die Zwischenablage kopiert.",
+        "diag_copied": "[OK] Log in die Zwischenablage kopiert.",
         "log_exported": "[OK] Log exportiert: {}",
         "open_app_missing": "[INFO] Keine App-URL verfügbar.",
         "copy_url_missing": "[INFO] Keine URL zum Kopieren verfügbar.",
@@ -104,6 +114,7 @@ TEXTS = {
         "phase_files": "Phase: Dateien schreiben",
         "phase_containers": "Phase: Container starten",
         "phase_mongo": "Phase: Mongo-Replikat initialisieren",
+        "phase_build_image": "Phase: Eigenes Image bauen",
         "phase_texlive": "Phase: Vollständiges TeX Live installieren",
         "phase_done": "Phase: Fertig"
     },
@@ -112,12 +123,18 @@ TEXTS = {
         "mode_label": "Installation Option:",
         "mode_default": "[DEFAULT] localhost:8080",
         "mode_custom": "[CUSTOM] localhost with custom port",
+        "install_profile_label": "Installation profile:",
+        "install_profile_basic": "Basic (upstream image)",
+        "install_profile_advanced": "Advanced (custom Dockerfile image)",
+        "custom_image_tag_label": "Custom image tag:",
+        "custom_image_tag_hint": "Advanced only. Example: overleaf-sharelatex:custom",
         "port_label": "Custom Port:",
         "port_placeholder": "Ex: 666",
         "site_language_label": "Default site language:",
         "site_language_hint": "Used as default language for new sessions.",
         "full_texlive_check": "Install full TeX Live in container (scheme-full)",
         "full_texlive_hint": "Takes a long time and downloads many packages.",
+        "full_texlive_advanced_forced": "TeX Live will be integrated into the custom Docker image.",
         "safety_label": "Safety options:",
         "recreate_env_check": "Recreate overleaf.env (new secrets)",
         "reset_data_check": "Reset containers and local data before install",
@@ -142,8 +159,8 @@ TEXTS = {
         "btn_logs": "Logs (tail)",
         "btn_refresh_status": "Refresh status",
         "container_status": "Container status:",
-        "diag_title": "Diagnostics",
-        "btn_copy_diag": "Copy diagnostics",
+        "diag_title": "Logs",
+        "btn_copy_diag": "Copy Logs",
         "btn_export_log": "Export log",
         "user_mgmt_title": "User Management",
         "btn_delete_user": "Manage users",
@@ -178,10 +195,12 @@ TEXTS = {
         "server_restart": "[OK] Server restarted.",
         "not_installed": "[ERROR] Working folder not found.",
         "select_lang": "Select Language / Sprache auswählen",
+        "switch_to_de": "Switch to DE",
+        "switch_to_en": "Switch to EN",
         "validation_port": "Enter a port between 1 and 65535.",
         "repair_done": "[OK] Configuration repaired (files rewritten).",
         "update_done": "[OK] Images updated and services restarted.",
-        "diag_copied": "[OK] Diagnostics copied to clipboard.",
+        "diag_copied": "[OK] Logs copied to clipboard.",
         "log_exported": "[OK] Log exported: {}",
         "open_app_missing": "[INFO] No app URL available.",
         "copy_url_missing": "[INFO] No URL available to copy.",
@@ -189,6 +208,7 @@ TEXTS = {
         "phase_files": "Phase: Write files",
         "phase_containers": "Phase: Start containers",
         "phase_mongo": "Phase: Init Mongo replica",
+        "phase_build_image": "Phase: Build custom image",
         "phase_texlive": "Phase: Install full TeX Live",
         "phase_done": "Phase: Done"
     }
@@ -254,8 +274,6 @@ def set_installing_state(is_busy):
         btn_start.configure(state=state)
         btn_stop.configure(state=state)
         btn_restart.configure(state=state)
-        btn_logs.configure(state=state)
-        btn_refresh_status.configure(state=state)
         btn_refresh_checks.configure(state=state)
         refresh_install_enabled()
 
@@ -373,10 +391,10 @@ OVERLEAF_SITE_LANGUAGE={site_language}
     log("overleaf.env written.")
 
 
-def write_compose(port):
+def write_compose(port, sharelatex_image=BASE_SHARELATEX_IMAGE):
     compose_content = f"""services:
   sharelatex:
-    image: sharelatex/sharelatex:latest
+    image: {sharelatex_image}
     container_name: sharelatex
     restart: unless-stopped
     depends_on:
@@ -415,6 +433,35 @@ def write_compose(port):
     with open(INSTALL_DIR / "docker-compose.yml", "w", encoding="utf-8") as f:
         f.write(compose_content)
     log("docker-compose.yml written.")
+
+
+def generate_custom_dockerfile(dockerfile_path, include_full_texlive):
+    lines = [
+        f"FROM {BASE_SHARELATEX_IMAGE}",
+        "",
+    ]
+    if include_full_texlive:
+        lines += [
+            "RUN set -eux; \\",
+            "    YEAR=$(tlmgr --version | sed -n 's/.*version \\([0-9]\\{4\\}\\).*/\\1/p'); \\",
+            "    tlmgr update --self || (tlmgr option repository https://ftp.math.utah.edu/pub/tex/historic/systems/texlive/${YEAR}/tlnet-final && tlmgr update --self); \\",
+            "    tlmgr install scheme-full; \\",
+            "    tlmgr path add; \\",
+            "    mktexlsr",
+            "",
+        ]
+    with open(dockerfile_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines).rstrip() + "\n")
+    log(f"Dockerfile generated: {dockerfile_path.name}")
+
+
+def build_custom_sharelatex_image(image_tag, dockerfile_path):
+    log(f"[INFO] Building custom image: {image_tag}")
+    run_cmd(
+        ["docker", "build", "-f", str(dockerfile_path), "-t", image_tag, str(INSTALL_DIR)],
+        check=True,
+    )
+    log(f"[OK] Custom image built: {image_tag}")
 
 
 def init_mongo_replica():
@@ -503,7 +550,25 @@ def update_container_status_label():
         "mongo": get_container_status("mongo"),
         "redis": get_container_status("redis"),
     }
-    container_status_var.set(f"sharelatex={status['sharelatex']} | mongo={status['mongo']} | redis={status['redis']}")
+    status_style = {
+        "running": ("running", "#1f7a1f"),
+        "exited": ("stopped", "#b42318"),
+        "created": ("created", "#9a6700"),
+        "restarting": ("restarting", "#9a6700"),
+        "paused": ("paused", "#175cd3"),
+        "missing": ("not found", "#667085"),
+        "unknown": ("unknown", "#667085"),
+    }
+
+    def _set_badges():
+        for name, raw_status in status.items():
+            badge = container_status_labels.get(name)
+            if not badge:
+                continue
+            label, fg = status_style.get(raw_status, (raw_status.lower(), "#667085"))
+            badge.configure(text=f"{name}: {label}", foreground=fg)
+
+    ui_call(_set_badges)
 
 
 def compose_action_thread(action):
@@ -594,6 +659,8 @@ def save_settings():
     data = {
         "lang": LANG,
         "mode": mode_var.get(),
+        "install_profile": install_profile_var.get(),
+        "custom_image_tag": custom_image_tag_var.get().strip(),
         "custom_port": port_entry.get().strip(),
         "site_language": site_lang_var.get(),
         "install_full_texlive": full_texlive_var.get(),
@@ -654,6 +721,20 @@ def update_visibility():
     else:
         if custom_port_frame.winfo_ismapped():
             custom_port_frame.pack_forget()
+
+    if install_profile_var.get() == "advanced":
+        if not advanced_profile_frame.winfo_ismapped():
+            advanced_profile_frame.pack(fill="x")
+        full_texlive_var.set(1)
+        full_texlive_checkbtn.configure(state=DISABLED)
+        full_texlive_text_var.set(t("full_texlive_advanced_forced"))
+        full_texlive_hint_var.set(t("full_texlive_advanced_forced"))
+    else:
+        if advanced_profile_frame.winfo_ismapped():
+            advanced_profile_frame.pack_forget()
+        full_texlive_checkbtn.configure(state=NORMAL)
+        full_texlive_text_var.set(t("full_texlive_check"))
+        full_texlive_hint_var.set(t("full_texlive_hint"))
 
     refresh_install_enabled()
     refresh_preflight_thread()
@@ -839,6 +920,8 @@ def run_install_flow(is_repair=False):
         mode = mode_var.get()
         custom_port = port_entry.get().strip()
         site_language = site_lang_var.get().strip() or "en"
+        install_profile = install_profile_var.get().strip() or "basic"
+        custom_image_tag = custom_image_tag_var.get().strip() or "overleaf-sharelatex:custom"
         install_full_texlive_enabled = full_texlive_var.get() == 1
         recreate_env = recreate_env_var.get() == 1
         reset_data = reset_data_var.get() == 1 and not is_repair
@@ -877,12 +960,19 @@ def run_install_flow(is_repair=False):
 
         set_phase(2, 6, t("phase_files"))
         create_env(domain, port, recreate=recreate_env, site_language=site_language)
-        write_compose(port)
+        sharelatex_image = BASE_SHARELATEX_IMAGE
+        if install_profile == "advanced":
+            set_phase(3, 6, t("phase_build_image"))
+            dockerfile_path = INSTALL_DIR / "Dockerfile.overleaf.generated"
+            generate_custom_dockerfile(dockerfile_path, include_full_texlive=install_full_texlive_enabled)
+            build_custom_sharelatex_image(custom_image_tag, dockerfile_path)
+            sharelatex_image = custom_image_tag
+        write_compose(port, sharelatex_image=sharelatex_image)
 
         if is_repair:
             # Recreate sharelatex so updated overleaf.env values take effect.
             run_cmd(compose + ["up", "-d", "--force-recreate", "sharelatex"], check=True)
-            if install_full_texlive_enabled:
+            if install_full_texlive_enabled and install_profile != "advanced":
                 set_phase(5, 6, t("phase_texlive"))
                 install_full_texlive()
             log(t("repair_done"))
@@ -898,15 +988,15 @@ def run_install_flow(is_repair=False):
                 shutil.rmtree(data_dir, ignore_errors=True)
                 log("[INFO] Removed ./data")
 
-        set_phase(3, 6, t("phase_containers"))
+        set_phase(4, 6, t("phase_containers"))
         log(t("log_dl"))
         run_cmd(compose + ["down"], check=True)
         run_cmd(compose + ["up", "-d"], check=True)
 
-        set_phase(4, 6, t("phase_mongo"))
+        set_phase(5, 6, t("phase_mongo"))
         init_mongo_replica()
 
-        if install_full_texlive_enabled:
+        if install_full_texlive_enabled and install_profile != "advanced":
             set_phase(5, 6, t("phase_texlive"))
             install_full_texlive()
 
@@ -975,6 +1065,15 @@ def set_lang(language):
     launch_main_gui()
 
 
+def toggle_main_language():
+    global LANG, root
+    LANG = "de" if LANG == "en" else "en"
+    save_language_setting(LANG)
+    save_settings()
+    root.destroy()
+    launch_main_gui()
+
+
 def launch_lang_selector():
     global lang_window
     lang_window = Tk()
@@ -994,16 +1093,16 @@ def launch_lang_selector():
 
 def launch_main_gui():
     global root
-    global mode_var, port_entry, site_lang_var, full_texlive_var
+    global mode_var, port_entry, site_lang_var, full_texlive_var, install_profile_var, custom_image_tag_var
     global recreate_env_var, reset_data_var
     global output_box, progress_var, progress_bar, progress_label_var
     global port_error_var
-    global custom_port_frame
+    global custom_port_frame, advanced_profile_frame, full_texlive_checkbtn, full_texlive_text_var, full_texlive_hint_var
     global btn_install, btn_repair, btn_update, btn_delete_user
-    global btn_start, btn_stop, btn_restart, btn_logs, btn_refresh_status
+    global btn_start, btn_stop, btn_restart
     global btn_refresh_checks
     global preflight_git_val, preflight_compose_val, preflight_docker_val, preflight_port_val
-    global container_status_var
+    global container_status_labels
 
     settings = load_settings()
 
@@ -1015,7 +1114,11 @@ def launch_main_gui():
     frame = ttk.Frame(root, padding=12)
     frame.pack(fill="both", expand=True)
 
-    ttk.Label(frame, text=t("title"), font=("Helvetica", 14, "bold")).pack(anchor="w", pady=(0, 6))
+    header = ttk.Frame(frame)
+    header.pack(fill="x", pady=(0, 6))
+    ttk.Label(header, text=t("title"), font=("Helvetica", 14, "bold")).pack(side="left")
+    lang_btn_text = t("switch_to_de") if LANG == "en" else t("switch_to_en")
+    ttk.Button(header, text=lang_btn_text, command=toggle_main_language).pack(side="right")
 
     # Scrollable top area
     top_area = ttk.Frame(frame)
@@ -1086,6 +1189,30 @@ def launch_main_gui():
     ttk.Radiobutton(mode_frame, text=t("mode_default"), variable=mode_var, value=1).pack(anchor="w")
     ttk.Radiobutton(mode_frame, text=t("mode_custom"), variable=mode_var, value=2).pack(anchor="w")
 
+    ttk.Label(mode_frame, text=t("install_profile_label")).pack(anchor="w", pady=(8, 0))
+    install_profile_var = StringVar(value=settings.get("install_profile", "basic"))
+    install_profile_combo = ttk.Combobox(
+        mode_frame,
+        textvariable=install_profile_var,
+        state="readonly",
+        values=["basic", "advanced"],
+        width=12,
+    )
+    install_profile_combo.pack(anchor="w", pady=4)
+    # Show friendly labels next to raw values.
+    ttk.Label(
+        mode_frame,
+        text=f"basic = {t('install_profile_basic')} | advanced = {t('install_profile_advanced')}",
+        font=("Helvetica", 9, "italic"),
+    ).pack(anchor="w")
+
+    advanced_profile_frame = ttk.Frame(mode_frame)
+    ttk.Label(advanced_profile_frame, text=t("custom_image_tag_label")).pack(anchor="w", pady=(8, 0))
+    custom_image_tag_var = StringVar(value=settings.get("custom_image_tag", "overleaf-sharelatex:custom"))
+    custom_image_tag_entry = ttk.Entry(advanced_profile_frame, textvariable=custom_image_tag_var)
+    custom_image_tag_entry.pack(fill="x", pady=4)
+    ttk.Label(advanced_profile_frame, text=t("custom_image_tag_hint"), font=("Helvetica", 9, "italic")).pack(anchor="w")
+
     custom_port_frame = ttk.Frame(mode_frame)
     ttk.Label(custom_port_frame, text=t("port_label")).pack(anchor="w", pady=(8, 0))
     port_entry = ttk.Entry(custom_port_frame)
@@ -1105,8 +1232,11 @@ def launch_main_gui():
     site_lang_combo.pack(anchor="w", pady=4)
     ttk.Label(mode_frame, text=t("site_language_hint"), font=("Helvetica", 9, "italic")).pack(anchor="w")
     full_texlive_var = IntVar(value=int(settings.get("install_full_texlive", 0)))
-    ttk.Checkbutton(mode_frame, text=t("full_texlive_check"), variable=full_texlive_var).pack(anchor="w", pady=(8, 0))
-    ttk.Label(mode_frame, text=t("full_texlive_hint"), font=("Helvetica", 9, "italic")).pack(anchor="w")
+    full_texlive_text_var = StringVar(value=t("full_texlive_check"))
+    full_texlive_checkbtn = ttk.Checkbutton(mode_frame, textvariable=full_texlive_text_var, variable=full_texlive_var)
+    full_texlive_checkbtn.pack(anchor="w", pady=(8, 0))
+    full_texlive_hint_var = StringVar(value=t("full_texlive_hint"))
+    ttk.Label(mode_frame, textvariable=full_texlive_hint_var, font=("Helvetica", 9, "italic")).pack(anchor="w")
 
     port_error_var = StringVar(value="")
     ttk.Label(custom_port_frame, textvariable=port_error_var, foreground="red").pack(anchor="w")
@@ -1146,14 +1276,19 @@ def launch_main_gui():
     btn_stop = ttk.Button(control_frame, text=t("btn_stop"), command=stop_server_thread)
     btn_stop.pack(side="left", padx=(0, 6))
     btn_restart = ttk.Button(control_frame, text=t("btn_restart"), command=restart_server_thread)
-    btn_restart.pack(side="left", padx=(0, 6))
-    btn_logs = ttk.Button(control_frame, text=t("btn_logs"), command=lambda: threading.Thread(target=show_logs_thread, daemon=True).start())
-    btn_logs.pack(side="left", padx=(0, 6))
-    btn_refresh_status = ttk.Button(control_frame, text=t("btn_refresh_status"), command=lambda: threading.Thread(target=refresh_status_thread, daemon=True).start())
-    btn_refresh_status.pack(side="left")
-    container_status_var = StringVar(value="sharelatex=unknown | mongo=unknown | redis=unknown")
+    btn_restart.pack(side="left")
     ttk.Label(control_frame, text=f"{t('container_status')}").pack(anchor="w", pady=(8, 0))
-    ttk.Label(control_frame, textvariable=container_status_var).pack(anchor="w")
+    badges_frame = ttk.Frame(control_frame)
+    badges_frame.pack(anchor="w", fill="x")
+    container_status_labels = {}
+    for name in ("sharelatex", "mongo", "redis"):
+        badge = ttk.Label(
+            badges_frame,
+            text=f"{name}: unknown",
+            font=("Helvetica", 9, "bold"),
+        )
+        badge.pack(side="left", padx=(0, 14), pady=(0, 2))
+        container_status_labels[name] = badge
 
     diag_frame = ttk.LabelFrame(scroll_content, text=t("diag_title"), padding=10)
     diag_frame.pack(fill="x", pady=4)
@@ -1171,12 +1306,14 @@ def launch_main_gui():
     output_box.pack(fill="both", expand=True)
 
     mode_var.trace_add("write", lambda *_: update_visibility())
+    install_profile_var.trace_add("write", lambda *_: update_visibility())
     recreate_env_var.trace_add("write", lambda *_: save_settings())
     reset_data_var.trace_add("write", lambda *_: save_settings())
 
     port_entry.bind("<KeyRelease>", lambda *_: (refresh_install_enabled(), save_settings(), refresh_preflight_thread()))
     site_lang_var.trace_add("write", lambda *_: save_settings())
     full_texlive_var.trace_add("write", lambda *_: save_settings())
+    custom_image_tag_var.trace_add("write", lambda *_: save_settings())
 
     update_visibility()
     refresh_install_enabled()

@@ -13,6 +13,7 @@ from pathlib import Path
 
 INSTALL_DIR = Path(__file__).resolve().parent
 DEFAULT_PORT = 8080
+BASE_SHARELATEX_IMAGE = "sharelatex/sharelatex:latest"
 
 
 def log(msg):
@@ -118,10 +119,10 @@ OVERLEAF_SITE_LANGUAGE={site_language}
     log("overleaf.env written.")
 
 
-def write_compose(port):
+def write_compose(port, sharelatex_image=BASE_SHARELATEX_IMAGE):
     compose_content = f"""services:
   sharelatex:
-    image: sharelatex/sharelatex:latest
+    image: {sharelatex_image}
     container_name: sharelatex
     restart: unless-stopped
     depends_on:
@@ -160,6 +161,35 @@ def write_compose(port):
     with open(INSTALL_DIR / "docker-compose.yml", "w", encoding="utf-8") as f:
         f.write(compose_content)
     log("docker-compose.yml written.")
+
+
+def generate_custom_dockerfile(dockerfile_path, include_full_texlive):
+    lines = [
+        f"FROM {BASE_SHARELATEX_IMAGE}",
+        "",
+    ]
+    if include_full_texlive:
+        lines += [
+            "RUN set -eux; \\",
+            "    YEAR=$(tlmgr --version | sed -n 's/.*version \\([0-9]\\{4\\}\\).*/\\1/p'); \\",
+            "    tlmgr update --self || (tlmgr option repository https://ftp.math.utah.edu/pub/tex/historic/systems/texlive/${YEAR}/tlnet-final && tlmgr update --self); \\",
+            "    tlmgr install scheme-full; \\",
+            "    tlmgr path add; \\",
+            "    mktexlsr",
+            "",
+        ]
+    with open(dockerfile_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines).rstrip() + "\n")
+    log(f"Dockerfile generated: {dockerfile_path.name}")
+
+
+def build_custom_sharelatex_image(image_tag, dockerfile_path):
+    log(f"[INFO] Building custom image: {image_tag}")
+    run_cmd(
+        ["docker", "build", "-f", str(dockerfile_path), "-t", image_tag, str(INSTALL_DIR)],
+        check=True,
+    )
+    log(f"[OK] Custom image built: {image_tag}")
 
 
 def init_mongo_replica():
@@ -244,10 +274,11 @@ def validate_prereqs():
     return compose
 
 
-def perform_install(port, site_language, recreate_env, reset_data, full_texlive, open_browser):
+def perform_install(port, site_language, recreate_env, reset_data, full_texlive, open_browser, profile, image_tag):
     compose = validate_prereqs()
     domain = f"localhost:{port}"
     first_time_install = not (INSTALL_DIR / "overleaf.env").exists()
+    effective_full_texlive = full_texlive or (profile == "advanced")
 
     if is_port_in_use(port):
         log(f"[WARN] Port {port} is busy. Continuing because this may be existing Overleaf.")
@@ -255,7 +286,15 @@ def perform_install(port, site_language, recreate_env, reset_data, full_texlive,
     os.chdir(INSTALL_DIR)
     log(f"Using working directory: {INSTALL_DIR}")
     create_env(domain, port, recreate=recreate_env, site_language=site_language)
-    write_compose(port)
+    sharelatex_image = BASE_SHARELATEX_IMAGE
+    if profile == "advanced":
+        dockerfile_path = INSTALL_DIR / "Dockerfile.overleaf.generated"
+        if not full_texlive:
+            log("[INFO] Advanced profile selected: Full TeX Live will be integrated into the custom Docker image.")
+        generate_custom_dockerfile(dockerfile_path, include_full_texlive=effective_full_texlive)
+        build_custom_sharelatex_image(image_tag, dockerfile_path)
+        sharelatex_image = image_tag
+    write_compose(port, sharelatex_image=sharelatex_image)
 
     if reset_data:
         run_cmd(compose + ["down"], check=False)
@@ -268,7 +307,7 @@ def perform_install(port, site_language, recreate_env, reset_data, full_texlive,
     run_cmd(compose + ["up", "-d"], check=True)
     init_mongo_replica()
 
-    if full_texlive:
+    if effective_full_texlive and profile != "advanced":
         install_full_texlive()
 
     app_url = f"http://{domain}"
@@ -281,15 +320,24 @@ def perform_install(port, site_language, recreate_env, reset_data, full_texlive,
         webbrowser.open(open_url)
 
 
-def perform_repair(port, site_language, recreate_env, full_texlive):
+def perform_repair(port, site_language, recreate_env, full_texlive, profile, image_tag):
     compose = validate_prereqs()
     domain = f"localhost:{port}"
+    effective_full_texlive = full_texlive or (profile == "advanced")
     os.chdir(INSTALL_DIR)
     log(f"Using working directory: {INSTALL_DIR}")
     create_env(domain, port, recreate=recreate_env, site_language=site_language)
-    write_compose(port)
+    sharelatex_image = BASE_SHARELATEX_IMAGE
+    if profile == "advanced":
+        dockerfile_path = INSTALL_DIR / "Dockerfile.overleaf.generated"
+        if not full_texlive:
+            log("[INFO] Advanced profile selected: Full TeX Live will be integrated into the custom Docker image.")
+        generate_custom_dockerfile(dockerfile_path, include_full_texlive=effective_full_texlive)
+        build_custom_sharelatex_image(image_tag, dockerfile_path)
+        sharelatex_image = image_tag
+    write_compose(port, sharelatex_image=sharelatex_image)
     run_cmd(compose + ["up", "-d", "--force-recreate", "sharelatex"], check=True)
-    if full_texlive:
+    if effective_full_texlive and profile != "advanced":
         install_full_texlive()
     log("[OK] Configuration repaired.")
 
@@ -314,12 +362,6 @@ def action_compose_simple(subcmd):
     elif subcmd == "restart":
         run_cmd(compose + ["restart"], check=True)
         log("[OK] Server restarted.")
-    elif subcmd == "logs":
-        res = run_cmd(compose + ["logs", "--tail", "200"], capture=True)
-        print(((res.stdout or "") + (res.stderr or "")).strip())
-    elif subcmd == "status":
-        res = run_cmd(compose + ["ps"], capture=True)
-        print(((res.stdout or "") + (res.stderr or "")).strip())
 
 
 def users_list():
@@ -379,7 +421,13 @@ def build_parser():
     def add_common_install_flags(sp):
         sp.add_argument("--port", type=int, default=DEFAULT_PORT, help="Local port (default: 8080)")
         sp.add_argument("--site-language", default="en", help="Default site language (e.g. en,de,fr,es,it,pt)")
-        sp.add_argument("--full-texlive", action="store_true", help="Install full TeX Live via tlmgr")
+        sp.add_argument("--profile", choices=["basic", "advanced"], default="basic", help="Installation profile")
+        sp.add_argument("--image-tag", default="overleaf-sharelatex:custom", help="Custom image tag (advanced profile)")
+        sp.add_argument(
+            "--full-texlive",
+            action="store_true",
+            help="Install full TeX Live via tlmgr (automatic with --profile advanced)",
+        )
 
     s_install = sub.add_parser("install", help="Install/reinstall Overleaf stack")
     add_common_install_flags(s_install)
@@ -395,8 +443,6 @@ def build_parser():
     sub.add_parser("start", help="Start services")
     sub.add_parser("stop", help="Stop services")
     sub.add_parser("restart", help="Recreate/restart sharelatex")
-    sub.add_parser("logs", help="Show recent compose logs")
-    sub.add_parser("status", help="Show compose status")
 
     s_pre = sub.add_parser("preflight", help="Run prerequisite checks")
     s_pre.add_argument("--port", type=int, default=DEFAULT_PORT, help="Port to test")
@@ -426,6 +472,8 @@ def main():
                 reset_data=args.reset_data,
                 full_texlive=args.full_texlive,
                 open_browser=(not args.no_open),
+                profile=args.profile,
+                image_tag=args.image_tag,
             )
         elif args.cmd == "repair":
             port = sanitize_port(args.port)
@@ -436,10 +484,12 @@ def main():
                 site_language=args.site_language,
                 recreate_env=args.recreate_env,
                 full_texlive=args.full_texlive,
+                profile=args.profile,
+                image_tag=args.image_tag,
             )
         elif args.cmd == "update-images":
             action_update_images()
-        elif args.cmd in ("start", "stop", "restart", "logs", "status"):
+        elif args.cmd in ("start", "stop", "restart"):
             action_compose_simple(args.cmd)
         elif args.cmd == "preflight":
             port = sanitize_port(args.port)

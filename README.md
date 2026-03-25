@@ -37,11 +37,16 @@ It is designed to keep setup simple and reproducible from a single folder, while
 
 - 📁 **One-folder deployment**: all files are created/managed in the script directory.
 - 🌐 **Local setup modes**: default `localhost:8080` or custom local port.
+- 🧩 **Installation profiles**:
+  - `basic`: uses upstream `sharelatex/sharelatex:latest`
+  - `advanced`: builds a custom image from generated Dockerfile
 - 🗣️ **Default site language selector**: writes `OVERLEAF_SITE_LANGUAGE` into `overleaf.env`.
+- 🔁 **Top-right GUI language switch**: toggle installer UI language (`EN/DE`) and persist it.
 - ✅ **Preflight checks**: Git, Compose, Docker, and port status.
 - 🛠️ **Install / Repair / Update** actions.
 - 📚 **Optional full TeX Live**: install `scheme-full` via `tlmgr` in `sharelatex`.
-- 🧱 **Container controls**: start, stop, recreate-restart, logs, refresh status.
+- 🧱 **Advanced + TeX Live integration**: in `advanced` profile, full TeX Live is integrated into the custom image automatically.
+- 🧱 **Container controls**: start, stop, restart with live container status indicators.
 - 👥 **User management window**: list users, select, and delete with confirmation.
 - 🩺 **Diagnostics tools**: copy diagnostics and export installer log.
 - 🖼️ **Fixed-size GUI with scrollable controls** and fixed-size log panel.
@@ -75,9 +80,12 @@ python install_overleaf_cli.py --help
 
 3. In the GUI:
    - select installer language (`English` or `Deutsch`)
+   - you can later switch GUI language using the top-right `Switch to DE/EN` button
    - choose install option (default/custom port)
+   - choose install profile (`basic` or `advanced`)
+   - if `advanced` is selected, TeX Live is automatically integrated into the custom image
    - choose default site language
-   - optionally enable full TeX Live
+   - in `basic`, you can optionally enable full TeX Live checkbox
    - click **Install**
 
 On first setup (or after data reset), the GUI opens:
@@ -109,10 +117,12 @@ On first setup (or after data reset), the GUI opens:
    - delete selected user (with confirmation)
 
 5. **Container operations**
-   - use start/stop/restart/log/status buttons in Container Control
+   - use start/stop/restart buttons in Container Control
+   - view live `sharelatex / mongo / redis` status labels next to the buttons
 
 6. **CLI workflow**
    - install: `python install_overleaf_cli.py install --port 666 --site-language de`
+   - advanced install (custom image tag): `python install_overleaf_cli.py install --profile advanced --image-tag overleaf-sharelatex:custom`
    - repair: `python install_overleaf_cli.py repair --full-texlive`
    - users: `python install_overleaf_cli.py users list`
    - delete user: `python install_overleaf_cli.py users delete --email user@example.com`
@@ -147,6 +157,10 @@ All project runtime files are in this folder:
   - `tlmgr update --self`
   - `tlmgr install scheme-full`
   - `tlmgr path add`
+- In `advanced` profile:
+  - installer generates `Dockerfile.overleaf.generated`
+  - builds custom image (tag configurable)
+  - writes `docker-compose.yml` to use that custom image
 - Cross-release TeX repo mismatch is handled by auto-switch to historic TeX Live repo when needed
 
 * * *
