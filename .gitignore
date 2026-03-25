@@ -1,0 +1,20 @@
+﻿# Python
+__pycache__/
+*.py[cod]
+
+# Local IDE/editor
+.vscode/
+.idea/
+
+# Installer local state
+.overleaf_installer_settings.json
+installer_log_*.txt
+
+# Runtime/generated Overleaf files
+overleaf.env
+docker-compose.yml
+data/
+
+# OS
+.DS_Store
+Thumbs.db
