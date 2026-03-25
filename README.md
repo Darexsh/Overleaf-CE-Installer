@@ -60,11 +60,11 @@ It is designed to keep setup simple and reproducible from a single folder, while
 2. Run the installer:
 
 ```powershell
-python install_overleaf.py
+python install_overleaf_gui.py
 ```
 
 ```bash
-python3 install_overleaf.py
+python3 install_overleaf_gui.py
 ```
 
 Or run the CLI version:
@@ -123,7 +123,7 @@ On first setup (or after data reset), the GUI opens:
 
 All project runtime files are in this folder:
 
-- `install_overleaf.py`
+- `install_overleaf_gui.py`
 - `install_overleaf_cli.py`
 - `overleaf.env`
 - `docker-compose.yml`
