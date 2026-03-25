@@ -16,7 +16,61 @@ DEFAULT_PORT = 8080
 BASE_SHARELATEX_IMAGE = "sharelatex/sharelatex:latest"
 
 
+def _supports_color():
+    if os.environ.get("NO_COLOR"):
+        return False
+    if not hasattr(sys.stdout, "isatty") or not sys.stdout.isatty():
+        return False
+    if os.name == "nt" and not os.environ.get("WT_SESSION"):
+        # Keep ANSI default-on for modern Windows terminals; legacy consoles may not support it.
+        return True
+    return True
+
+
+USE_COLOR = _supports_color()
+STYLE = {
+    "reset": "\033[0m",
+    "dim": "\033[2m",
+    "bold": "\033[1m",
+    "cyan": "\033[36m",
+    "green": "\033[32m",
+    "yellow": "\033[33m",
+    "red": "\033[31m",
+}
+
+
+def colorize(text, color=None, bold=False, dim=False):
+    if not USE_COLOR:
+        return text
+    parts = []
+    if bold:
+        parts.append(STYLE["bold"])
+    if dim:
+        parts.append(STYLE["dim"])
+    if color:
+        parts.append(STYLE[color])
+    parts.append(text)
+    parts.append(STYLE["reset"])
+    return "".join(parts)
+
+
+def section(title):
+    print(colorize(f"\n== {title} ==", color="cyan", bold=True), flush=True)
+
+
 def log(msg):
+    if msg.startswith("[OK]"):
+        print(colorize(msg, color="green", bold=True), flush=True)
+        return
+    if msg.startswith("[WARN]"):
+        print(colorize(msg, color="yellow", bold=True), flush=True)
+        return
+    if msg.startswith("[ERROR]"):
+        print(colorize(msg, color="red", bold=True), flush=True)
+        return
+    if msg.startswith("[INFO]"):
+        print(colorize(msg, color="cyan"), flush=True)
+        return
     print(msg, flush=True)
 
 
@@ -377,8 +431,9 @@ def users_list():
     if not out:
         log("[INFO] No users found.")
     else:
-        for email in out:
-            print(email)
+        print(colorize(f"Found {len(out)} user(s):", bold=True))
+        for idx, email in enumerate(out, start=1):
+            print(f"  {idx:>2}. {email}")
 
 
 def users_delete(email):
@@ -412,12 +467,31 @@ def preflight(port):
         "docker": check_docker_running(),
         "port_free": (port is not None and not is_port_in_use(port)),
     }
-    print(status)
+    section("Preflight")
+    rows = [
+        ("Git", status["git"]),
+        ("Compose", status["compose"]),
+        ("Docker", status["docker"]),
+        (f"Port {port}", status["port_free"]),
+    ]
+    for name, ok in rows:
+        mark = colorize("OK", color="green", bold=True) if ok else colorize("FAIL", color="red", bold=True)
+        print(f"{name:<12} : {mark}")
 
 
 def build_parser():
-    p = argparse.ArgumentParser(description="Overleaf CE CLI installer/controller")
-    sub = p.add_subparsers(dest="cmd", required=True)
+    p = argparse.ArgumentParser(
+        description="Overleaf CE CLI installer/controller",
+        formatter_class=argparse.RawTextHelpFormatter,
+        epilog=(
+            "Examples:\n"
+            "  python install_overleaf_cli.py install --port 666 --site-language de\n"
+            "  python install_overleaf_cli.py install --profile advanced --image-tag overleaf-sharelatex:custom\n"
+            "  python install_overleaf_cli.py users list\n"
+            "  python install_overleaf_cli.py users delete --email user@example.com"
+        ),
+    )
+    sub = p.add_subparsers(dest="cmd", required=False)
 
     def add_common_install_flags(sp):
         sp.add_argument("--port", type=int, default=DEFAULT_PORT, help="Local port (default: 8080)")
@@ -453,8 +527,139 @@ def build_parser():
     users_sub.add_parser("list", help="List users")
     u_del = users_sub.add_parser("delete", help="Delete user and owned projects")
     u_del.add_argument("--email", required=True, help="User email")
+    sub.add_parser("interactive", help="Start interactive menu")
 
     return p
+
+
+def prompt_text(label, default=None, validator=None, allow_empty=False):
+    while True:
+        suffix = f" [{default}]" if default not in (None, "") else ""
+        raw = input(f"{label}{suffix}: ").strip()
+        if raw == "" and default is not None:
+            raw = str(default)
+        if raw == "" and allow_empty:
+            return raw
+        if raw == "":
+            print("Value is required.")
+            continue
+        if validator and not validator(raw):
+            print("Invalid value. Please try again.")
+            continue
+        return raw
+
+
+def prompt_yes_no(label, default=False):
+    yn = "Y/n" if default else "y/N"
+    while True:
+        raw = input(f"{label} ({yn}): ").strip().lower()
+        if raw == "":
+            return default
+        if raw in ("y", "yes"):
+            return True
+        if raw in ("n", "no"):
+            return False
+        print("Please answer with y or n.")
+
+
+def prompt_choice(label, options, default):
+    opts = "/".join(options)
+    while True:
+        raw = input(f"{label} ({opts}) [{default}]: ").strip().lower()
+        if raw == "":
+            raw = default
+        if raw in options:
+            return raw
+        print(f"Choose one of: {', '.join(options)}")
+
+
+def run_interactive():
+    section("Interactive Mode")
+    print("Choose an action:")
+    actions = [
+        ("install", "Install"),
+        ("repair", "Repair config"),
+        ("update-images", "Update images"),
+        ("start", "Start containers"),
+        ("stop", "Stop containers"),
+        ("restart", "Restart containers"),
+        ("preflight", "Run preflight checks"),
+        ("users-list", "List users"),
+        ("users-delete", "Delete user"),
+        ("exit", "Exit"),
+    ]
+    for i, (_, label) in enumerate(actions, start=1):
+        print(f"  {i:>2}. {label}")
+
+    while True:
+        raw = input("Select number: ").strip()
+        if raw.isdigit():
+            idx = int(raw)
+            if 1 <= idx <= len(actions):
+                action = actions[idx - 1][0]
+                break
+        print("Invalid selection.")
+
+    if action == "exit":
+        print("Bye.")
+        return
+
+    if action in ("start", "stop", "restart"):
+        action_compose_simple(action)
+        return
+    if action == "update-images":
+        action_update_images()
+        return
+    if action == "preflight":
+        port_raw = prompt_text("Port", default=str(DEFAULT_PORT), validator=lambda v: sanitize_port(v) is not None)
+        preflight(sanitize_port(port_raw))
+        return
+    if action == "users-list":
+        users_list()
+        return
+    if action == "users-delete":
+        users_list()
+        email = prompt_text("Email to delete")
+        users_delete(email)
+        return
+
+    # install / repair wizard
+    port_raw = prompt_text("Port", default=str(DEFAULT_PORT), validator=lambda v: sanitize_port(v) is not None)
+    port = sanitize_port(port_raw)
+    site_language = prompt_text("Site language", default="en")
+    profile = prompt_choice("Profile", ["basic", "advanced"], default="basic")
+    image_tag = "overleaf-sharelatex:custom"
+    if profile == "advanced":
+        image_tag = prompt_text("Custom image tag", default=image_tag)
+        full_texlive = True
+        log("[INFO] Advanced profile selected: Full TeX Live will be integrated automatically.")
+    else:
+        full_texlive = prompt_yes_no("Install full TeX Live", default=False)
+
+    recreate_env = prompt_yes_no("Recreate overleaf.env", default=False)
+
+    if action == "install":
+        reset_data = prompt_yes_no("Reset local data before install", default=False)
+        open_browser = prompt_yes_no("Open browser when done", default=True)
+        perform_install(
+            port=port,
+            site_language=site_language,
+            recreate_env=recreate_env,
+            reset_data=reset_data,
+            full_texlive=full_texlive,
+            open_browser=open_browser,
+            profile=profile,
+            image_tag=image_tag,
+        )
+    else:
+        perform_repair(
+            port=port,
+            site_language=site_language,
+            recreate_env=recreate_env,
+            full_texlive=full_texlive,
+            profile=profile,
+            image_tag=image_tag,
+        )
 
 
 def main():
@@ -462,7 +667,11 @@ def main():
     args = parser.parse_args()
 
     try:
+        if args.cmd in (None, "interactive"):
+            run_interactive()
+            return
         if args.cmd == "install":
+            section("Install")
             port = sanitize_port(args.port)
             if port is None:
                 raise RuntimeError("Invalid port. Must be 1..65535")
@@ -477,6 +686,7 @@ def main():
                 image_tag=args.image_tag,
             )
         elif args.cmd == "repair":
+            section("Repair")
             port = sanitize_port(args.port)
             if port is None:
                 raise RuntimeError("Invalid port. Must be 1..65535")
@@ -489,13 +699,16 @@ def main():
                 image_tag=args.image_tag,
             )
         elif args.cmd == "update-images":
+            section("Update Images")
             action_update_images()
         elif args.cmd in ("start", "stop", "restart"):
+            section(f"Container {args.cmd.title()}")
             action_compose_simple(args.cmd)
         elif args.cmd == "preflight":
             port = sanitize_port(args.port)
             preflight(port)
         elif args.cmd == "users":
+            section("Users")
             if args.users_cmd == "list":
                 users_list()
             elif args.users_cmd == "delete":
@@ -505,7 +718,7 @@ def main():
         else:
             parser.error("Unknown command")
     except Exception as e:
-        print(f"[ERROR] {e}", file=sys.stderr)
+        print(colorize(f"[ERROR] {e}", color="red", bold=True), file=sys.stderr)
         sys.exit(1)
 
 
