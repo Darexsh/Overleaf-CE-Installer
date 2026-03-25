@@ -41,8 +41,9 @@ def check_docker_running():
 
 def get_compose_cmd():
     try:
-        run_cmd(["docker", "compose", "version"], check=False)
-        return ["docker", "compose"]
+        res = run_cmd(["docker", "compose", "version"], check=False, capture=True)
+        if res.returncode == 0:
+            return ["docker", "compose"]
     except Exception:
         pass
     if check_command("docker-compose"):

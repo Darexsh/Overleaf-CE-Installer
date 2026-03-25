@@ -22,6 +22,7 @@ BASE_SHARELATEX_IMAGE = "sharelatex/sharelatex:latest"
 LANG = "en"
 installing_now = False
 container_status_labels = {}
+advanced_forced_full_texlive_prev = None
 
 TEXTS = {
     "de": {
@@ -62,8 +63,6 @@ TEXTS = {
         "btn_start": "Start",
         "btn_stop": "Stop",
         "btn_restart": "Neustart",
-        "btn_logs": "Logs (Tail)",
-        "btn_refresh_status": "Status aktualisieren",
         "container_status": "Container-Status:",
         "diag_title": "Log",
         "btn_copy_diag": "Log kopieren",
@@ -156,8 +155,6 @@ TEXTS = {
         "btn_start": "Start",
         "btn_stop": "Stop",
         "btn_restart": "Restart",
-        "btn_logs": "Logs (tail)",
-        "btn_refresh_status": "Refresh status",
         "container_status": "Container status:",
         "diag_title": "Logs",
         "btn_copy_diag": "Copy Logs",
@@ -320,8 +317,15 @@ def is_port_in_use(port):
 
 def get_compose_cmd():
     try:
-        subprocess.run(["docker", "compose", "version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
-        return ["docker", "compose"]
+        res = subprocess.run(
+            ["docker", "compose", "version"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            text=True,
+        )
+        if res.returncode == 0:
+            return ["docker", "compose"]
     except Exception:
         pass
     if check_command("docker-compose"):
@@ -604,22 +608,6 @@ def stop_server_thread():
 def restart_server_thread():
     threading.Thread(target=compose_action_thread, args=("restart",), daemon=True).start()
 
-def show_logs_thread():
-    compose = get_compose_cmd()
-    if not compose:
-        messagebox.showerror("Error", t("err_docker_compose"))
-        return
-    os.chdir(INSTALL_DIR)
-    res = run_cmd(compose + ["logs", "--tail", "200"], capture=True)
-    output = ((res.stdout or "") + (res.stderr or "")).strip()
-    if output:
-        log(output)
-
-
-def refresh_status_thread():
-    update_container_status_label()
-
-
 def do_refresh_preflight():
     port = selected_port()
     mode_is_custom = mode_var.get() == 2
@@ -715,6 +703,8 @@ def refresh_install_enabled():
 
 
 def update_visibility():
+    global advanced_forced_full_texlive_prev
+
     if mode_var.get() == 2:
         if not custom_port_frame.winfo_ismapped():
             custom_port_frame.pack(fill="x")
@@ -725,6 +715,8 @@ def update_visibility():
     if install_profile_var.get() == "advanced":
         if not advanced_profile_frame.winfo_ismapped():
             advanced_profile_frame.pack(fill="x")
+        if advanced_forced_full_texlive_prev is None:
+            advanced_forced_full_texlive_prev = full_texlive_var.get()
         full_texlive_var.set(1)
         full_texlive_checkbtn.configure(state=DISABLED)
         full_texlive_text_var.set(t("full_texlive_advanced_forced"))
@@ -732,6 +724,9 @@ def update_visibility():
     else:
         if advanced_profile_frame.winfo_ismapped():
             advanced_profile_frame.pack_forget()
+        if advanced_forced_full_texlive_prev is not None:
+            full_texlive_var.set(1 if advanced_forced_full_texlive_prev else 0)
+            advanced_forced_full_texlive_prev = None
         full_texlive_checkbtn.configure(state=NORMAL)
         full_texlive_text_var.set(t("full_texlive_check"))
         full_texlive_hint_var.set(t("full_texlive_hint"))
@@ -1318,7 +1313,7 @@ def launch_main_gui():
     update_visibility()
     refresh_install_enabled()
     refresh_preflight_thread()
-    threading.Thread(target=refresh_status_thread, daemon=True).start()
+    threading.Thread(target=update_container_status_label, daemon=True).start()
 
     root.mainloop()
 
