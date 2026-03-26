@@ -160,9 +160,9 @@ OVERLEAF_APP_NAME=Overleaf Community
 OVERLEAF_SITE_URL=http://{domain}
 OVERLEAF_SESSION_SECRET={session}
 OVERLEAF_JWT_SECRET={jwt}
-OVERLEAF_MONGO_URL=mongodb://mongo/sharelatex
-OVERLEAF_REDIS_HOST=redis
-REDIS_HOST=redis
+OVERLEAF_MONGO_URL=mongodb://overleaf-mongo/sharelatex
+OVERLEAF_REDIS_HOST=overleaf-redis
+REDIS_HOST=overleaf-redis
 REDIS_PORT=6379
 OVERLEAF_PORT={port}
 OVERLEAF_SITE_LANGUAGE={site_language}
@@ -181,20 +181,20 @@ def write_compose(port, sharelatex_image=BASE_SHARELATEX_IMAGE):
     container_name: sharelatex
     restart: unless-stopped
     depends_on:
-      - mongo
-      - redis
+      - overleaf-mongo
+      - overleaf-redis
     ports:
       - "{port}:80"
     links:
-      - mongo
-      - redis
+      - overleaf-mongo
+      - overleaf-redis
     volumes:
       - ./data/sharelatex:/var/lib/overleaf
       - ./data/logs:/var/log/overleaf
     environment:
-      OVERLEAF_MONGO_URL: mongodb://mongo/sharelatex
-      OVERLEAF_REDIS_HOST: redis
-      REDIS_HOST: redis
+      OVERLEAF_MONGO_URL: mongodb://overleaf-mongo/sharelatex
+      OVERLEAF_REDIS_HOST: overleaf-redis
+      REDIS_HOST: overleaf-redis
     env_file:
       - overleaf.env
 
@@ -250,7 +250,7 @@ def build_custom_sharelatex_image(image_tag, dockerfile_path):
 def init_mongo_replica():
     log("Init Mongo (wait 10s)...")
     time.sleep(10)
-    result = run_cmd(["docker", "exec", "mongo", "mongosh", "--eval", "rs.initiate()"], capture=True)
+    result = run_cmd(["docker", "exec", "overleaf-mongo", "mongosh", "--eval", "rs.initiate()"], capture=True)
     out = ((result.stdout or "") + (result.stderr or "")).strip()
     if "ok" in out or "already initialized" in out:
         log("[OK] Mongo replica set ready.")
@@ -424,7 +424,7 @@ def users_list():
         "const dbx=db.getSiblingDB('sharelatex');"
         "dbx.users.find({}, {email:1,_id:0}).sort({email:1}).forEach(u=>{ if(u.email){ print(u.email) } });"
     )
-    res = run_cmd(["docker", "exec", "mongo", "mongosh", "--quiet", "--eval", js], capture=True)
+    res = run_cmd(["docker", "exec", "overleaf-mongo", "mongosh", "--quiet", "--eval", js], capture=True)
     if res.returncode != 0:
         raise RuntimeError(((res.stdout or "") + (res.stderr or "")).strip())
     out = [l.strip() for l in (res.stdout or "").splitlines() if l.strip()]
@@ -448,7 +448,7 @@ def users_delete(email):
         "print('DELETED_USER='+usr);"
         "print('DELETED_PROJECTS='+proj);"
     )
-    res = run_cmd(["docker", "exec", "mongo", "mongosh", "--quiet", "--eval", js], capture=True)
+    res = run_cmd(["docker", "exec", "overleaf-mongo", "mongosh", "--quiet", "--eval", js], capture=True)
     out = ((res.stdout or "") + (res.stderr or "")).strip()
     if res.returncode != 0:
         raise RuntimeError(out)
