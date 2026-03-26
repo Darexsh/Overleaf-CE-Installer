@@ -127,7 +127,7 @@ On first setup (or after data reset), the GUI opens:
 
 5. **Container operations**
    - use start/stop/restart buttons in Container Control
-   - view live `sharelatex / mongo / redis` status labels next to the buttons
+   - view live `sharelatex / overleaf-mongo / overleaf-redis` status labels next to the buttons
 
 6. **CLI workflow**
    - interactive wizard: `python install_overleaf_cli.py` (or `python install_overleaf_cli.py interactive`)
@@ -181,7 +181,7 @@ All project runtime files are in this folder:
   run `Repair config` after changing site language, then hard-refresh browser.
 
 - **Port busy**:
-  choose another custom port.
+  preflight shows `Belegt` / `Busy`; choose another custom port or continue if this is your existing Overleaf instance.
 
 - **Docker permission errors**:
   make sure Docker Desktop is running and your shell can access Docker.
