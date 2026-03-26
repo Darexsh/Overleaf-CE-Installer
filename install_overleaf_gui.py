@@ -54,6 +54,7 @@ TEXTS = {
         "status_unknown": "Unbekannt",
         "status_ok": "OK",
         "status_fail": "Fehler",
+        "status_busy": "Belegt",
         "actions_title": "Aktionen",
         "btn_install": "Installieren",
         "btn_repair": "Konfiguration reparieren",
@@ -146,6 +147,7 @@ TEXTS = {
         "status_unknown": "Unknown",
         "status_ok": "OK",
         "status_fail": "Fail",
+        "status_busy": "Busy",
         "actions_title": "Actions",
         "btn_install": "Install",
         "btn_repair": "Repair config",
@@ -551,8 +553,8 @@ def get_container_status(name):
 def update_container_status_label():
     status = {
         "sharelatex": get_container_status("sharelatex"),
-        "mongo": get_container_status("overleaf-mongo"),
-        "redis": get_container_status("overleaf-redis"),
+        "overleaf-mongo": get_container_status("overleaf-mongo"),
+        "overleaf-redis": get_container_status("overleaf-redis"),
     }
     status_style = {
         "running": ("running", "#1f7a1f"),
@@ -612,7 +614,8 @@ def do_refresh_preflight():
     port = selected_port()
     mode_is_custom = mode_var.get() == 2
     port_valid = port is not None
-    port_ok = port_valid and (not is_port_in_use(port))
+    port_busy = port_valid and is_port_in_use(port)
+    port_ok = port_valid and (not port_busy)
     checks = {
         "git": check_command("git"),
         "compose": get_compose_cmd() is not None,
@@ -633,6 +636,8 @@ def do_refresh_preflight():
             preflight_port_val.configure(text=t("status_fail"), foreground="red")
         elif not mode_is_custom and not port_valid:
             preflight_port_val.configure(text=t("status_unknown"), foreground="orange")
+        elif port_busy:
+            preflight_port_val.configure(text=t("status_busy"), foreground="red")
         else:
             paint(preflight_port_val, checks["port"])
 
@@ -947,7 +952,8 @@ def run_install_flow(is_repair=False):
             return
 
         if not is_repair and is_port_in_use(port):
-            if not messagebox.askyesno("Port Busy", t("warn_port").format(port)):
+            warn_text = t("warn_port").format(port)
+            if not messagebox.askyesno("Port Busy", warn_text):
                 return
 
         os.chdir(INSTALL_DIR)
