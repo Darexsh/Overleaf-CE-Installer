@@ -419,17 +419,17 @@ def write_compose(port, sharelatex_image=BASE_SHARELATEX_IMAGE):
     env_file:
       - overleaf.env
 
-  mongo:
+  overleaf-mongo:
     image: mongo:8.0
-    container_name: mongo
+    container_name: overleaf-mongo
     restart: unless-stopped
     command: "--replSet overleaf"
     volumes:
       - ./data/mongo:/data/db
 
-  redis:
+  overleaf-redis:
     image: redis:7
-    container_name: redis
+    container_name: overleaf-redis
     restart: unless-stopped
     volumes:
       - ./data/redis:/data
